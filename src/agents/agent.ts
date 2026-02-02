@@ -132,10 +132,8 @@ Always be helpful and provide clear, concise responses.`;
         this.memory.addMessage(assistantMsg, this.sessionId);
       }
 
-      // 6. 自动提取和保存长期记忆（异步，不阻塞响应）
-      this.extractAndSaveMemory(userMessage, finalResponse.content).catch(err => {
-        logger.warn('Failed to save memory', { error: err instanceof Error ? err.message : String(err) });
-      });
+      // 6. 自动提取和保存长期记忆（同步执行，确保完成）
+      await this.extractAndSaveMemory(userMessage, finalResponse.content);
 
       const duration = Date.now() - startTime;
       logger.info(`Message processed in ${duration}ms`);
@@ -151,16 +149,16 @@ Always be helpful and provide clear, concise responses.`;
    * 自动提取和保存长期记忆
    */
   private async extractAndSaveMemory(userMessage: string, assistantResponse: string): Promise<void> {
-    // 跳过简单的问候和工具调用响应
+    // 只跳过纯粹的问候语（整个消息匹配）
     const skipPatterns = [
-      /^(你好|hi|hello|嗨|您好)/i,
+      /^(你好|hi|hello|嗨|您好)$/i,  // 添加 $ 确保是完整匹配
       /^i've used the available tools/i,
-      /^tool \w+ result:/i,
-      /^(ok|好的|明白了|收到)/i
+      /^tool \w+ result:/i
     ];
 
     for (const pattern of skipPatterns) {
       if (pattern.test(userMessage) || pattern.test(assistantResponse)) {
+        logger.info('Skipped memory extraction (matched pattern)');
         return;
       }
     }
@@ -176,6 +174,8 @@ Always be helpful and provide clear, concise responses.`;
 只返回需要记住的信息，用简洁的语言描述。如果没有，返回 "NONE"。`;
 
     try {
+      logger.info(`[Memory Extraction] Starting... userMsg: "${userMessage.substring(0, 30)}..."`);
+
       const llmResponse = await this.llmClient.chat([
         { role: 'system', content: '你是一个助手，专门提取对话中的重要用户信息。' },
         { role: 'user', content: extractPrompt }
@@ -183,14 +183,19 @@ Always be helpful and provide clear, concise responses.`;
 
       const extracted = llmResponse.content?.trim();
 
+      logger.info(`[Memory Extraction] LLM returned: "${extracted?.substring(0, 60)}..."`);
+
       // 如果提取到了重要信息且不是 "NONE"
-      if (extracted && extracted !== 'NONE' && extracted.length > 10 && extracted.length < 200) {
+      // 长度限制：至少 3 个字符，避免保存太短的信息
+      if (extracted && extracted !== 'NONE' && extracted.length > 2 && extracted.length < 500) {
         this.addMemory(extracted, 1.5, ['auto-extracted']);
-        logger.info(`Auto-saved memory: ${extracted.substring(0, 50)}...`);
+        logger.info(`[Memory] SAVED: ${extracted.substring(0, 50)}...`);
+      } else {
+        logger.info(`[Memory] Skipped - LLM returned: ${extracted || '(empty)'}`);
       }
     } catch (error) {
       // 记忆提取失败不影响主流程
-      logger.debug('Memory extraction skipped', { error: error instanceof Error ? error.message : String(error) });
+      logger.warn('Memory extraction failed', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -389,8 +394,10 @@ Always be helpful and provide clear, concise responses.`;
    */
   private loadLongTermMemory(): void {
     try {
+      logger.info(`[Memory Load] Loading memories for user: ${this.userId}`);
       // 获取该用户的重要记忆
       const memories = this.memory.getMemoriesByUser(this.userId, 20);
+      logger.info(`[Memory Load] Found ${memories.length} memories for user ${this.userId}`);
 
       if (memories.length > 0) {
         // 按重要性排序，取前5条最重要或最近访问的记忆
@@ -399,15 +406,17 @@ Always be helpful and provide clear, concise responses.`;
           .slice(0, 5);
 
         const memoryContext = importantMemories.map(m => m.content).join('\n- ');
+        logger.info(`[Memory Load] Loaded memories: ${memoryContext.substring(0, 100)}...`);
 
         // 重新设置系统提示（包含已保存的记忆）
         this.systemPrompt = this.getDefaultSystemPrompt();
         this.systemPrompt += `\n\nUser Context (from previous interactions):\n- ${memoryContext}`;
 
-        logger.debug(`Loaded ${importantMemories.length} memories for user ${this.userId}`);
+        logger.info(`[Memory Load] System prompt updated with ${importantMemories.length} memories`);
       } else {
         // 如果没有长期记忆，确保系统提示是最新的
         this.systemPrompt = this.getDefaultSystemPrompt();
+        logger.info('[Memory Load] No existing memories found for this user');
       }
     } catch (error) {
       logger.warn('Failed to load long-term memory', { error: error instanceof Error ? error.message : String(error) });
