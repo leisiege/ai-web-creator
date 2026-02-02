@@ -94,13 +94,14 @@ export class MemoryStore {
       CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
         session_id TEXT,
+        user_id TEXT,
         content TEXT NOT NULL,
+        embedding BLOB,
         importance REAL DEFAULT 1.0,
         access_count INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         accessed_at INTEGER NOT NULL,
-        tags TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        tags TEXT
       );
 
       CREATE TABLE IF NOT EXISTS tool_calls (
@@ -113,11 +114,14 @@ export class MemoryStore {
         success INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER,
         timestamp INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(session_id, role);
       CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC, accessed_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, timestamp);
     `;
@@ -285,12 +289,17 @@ export class MemoryStore {
 
   // ========== Memory Methods ==========
 
-  addMemory(content: string, sessionId?: string, importance: number = 1.0, tags?: string[]): string {
+  addMemory(content: string, sessionId?: string, importance: number = 1.0, tags?: string[], userId?: string): string {
     const id = this.generateId();
     const now = Math.floor(Date.now() / 1000);
     const tagsJson = tags ? JSON.stringify(tags) : null;
 
-    this.stmts.get('addMemory')!.run(id, sessionId || null, content, importance, now, now, tagsJson);
+    // 直接执行 SQL 而不是使用 prepared statement，因为参数数量可能不同
+    this.db.prepare(`
+      INSERT INTO memories (id, session_id, user_id, content, importance, access_count, created_at, accessed_at, tags)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+    `).run(id, sessionId || null, userId || null, content, importance, now, now, tagsJson);
+
     logger.debug(`Added memory: ${id}`);
     return id;
   }
@@ -303,13 +312,30 @@ export class MemoryStore {
   }
 
   getMemories(sessionId?: string, limit: number = 100): MemoryRecord[] {
-    const stmt = sessionId
-      ? this.stmts.get('getMemoriesBySession')!
-      : this.db.prepare(`SELECT * FROM memories WHERE session_id IS NULL ORDER BY created_at DESC LIMIT ?`);
+    let stmt;
+    let params: any[] = [];
 
-    const rows = sessionId
-      ? stmt.all(sessionId) as any[]
-      : stmt.all(limit) as any[];
+    if (sessionId) {
+      stmt = this.db.prepare(`SELECT * FROM memories WHERE session_id = ? ORDER BY created_at DESC LIMIT ?`);
+      params = [sessionId, limit];
+    } else {
+      stmt = this.db.prepare(`SELECT * FROM memories WHERE session_id IS NULL ORDER BY created_at DESC LIMIT ?`);
+      params = [limit];
+    }
+
+    const rows = stmt.all(...params) as any[];
+
+    return rows.map(row => {
+      this.stmts.get('updateMemoryAccess')!.run(Math.floor(Date.now() / 1000), row.id);
+      return this.mapMemoryRow(row);
+    });
+  }
+
+  getMemoriesByUser(userId: string, limit: number = 100): MemoryRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM memories WHERE user_id = ? ORDER BY importance DESC, accessed_at DESC LIMIT ?
+    `);
+    const rows = stmt.all(userId, limit) as any[];
 
     return rows.map(row => {
       this.stmts.get('updateMemoryAccess')!.run(Math.floor(Date.now() / 1000), row.id);
@@ -321,12 +347,12 @@ export class MemoryStore {
     // 简单的 LIKE 搜索，生产环境可用 FTS5 或向量搜索
     const stmt = this.db.prepare(`
       SELECT * FROM memories
-      WHERE (session_id = ? OR session_id IS NULL) AND content LIKE ?
+      WHERE (session_id = ? OR session_id IS NULL OR user_id = ?) AND content LIKE ?
       ORDER BY importance DESC, accessed_at DESC
       LIMIT ?
     `);
 
-    const rows = stmt.all(sessionId || null, `%${query}%`, limit) as any[];
+    const rows = stmt.all(sessionId || null, sessionId || null, `%${query}%`, limit) as any[];
     return rows.map(row => this.mapMemoryRow(row));
   }
 

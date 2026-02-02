@@ -27,14 +27,14 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY,
   session_id TEXT,
+  user_id TEXT,
   content TEXT NOT NULL,
   embedding BLOB,
   importance REAL DEFAULT 1.0,
   access_count INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
   accessed_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-  tags TEXT,
-  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  tags TEXT
 );
 
 -- 工具调用记录表
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(session_id, role);
 CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC, accessed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, timestamp);
 

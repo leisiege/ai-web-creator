@@ -65,6 +65,11 @@ export class Agent {
 
 ${toolDescriptions}
 
+Memory Instructions:
+- Remember important information shared by the user (name, preferences, context, etc.)
+- Reference past conversations when relevant
+- Build upon previous interactions to provide personalized assistance
+
 When you need to use a tool, respond with a function call in the format:
 { "tool_calls": [ { "name": "tool_name", "parameters": { ... } } ] }
 
@@ -75,9 +80,40 @@ Always be helpful and provide clear, concise responses.`;
    * 初始化会话
    */
   private initializeSession(): void {
-    if (!this.memory.sessionExists(this.sessionId)) {
+    const isNew = !this.memory.sessionExists(this.sessionId);
+
+    if (isNew) {
       this.memory.createSession(this.sessionId, this.userId);
       logger.info(`Created new session: ${this.sessionId}`);
+
+      // 加载用户的长期记忆作为上下文
+      this.loadLongTermMemory();
+    }
+  }
+
+  /**
+   * 加载长期记忆到上下文
+   */
+  private loadLongTermMemory(): void {
+    try {
+      // 获取该用户的重要记忆
+      const memories = this.memory.getMemoriesByUser(this.userId, 20);
+
+      if (memories.length > 0) {
+        // 按重要性排序，取前5条最重要或最近访问的记忆
+        const importantMemories = memories
+          .sort((a, b) => b.importance - a.importance)
+          .slice(0, 5);
+
+        const memoryContext = importantMemories.map(m => m.content).join('\n- ');
+
+        // 添加到系统提示中
+        this.systemPrompt += `\n\nUser Context (from previous interactions):\n- ${memoryContext}`;
+
+        logger.debug(`Loaded ${importantMemories.length} memories for user ${this.userId}`);
+      }
+    } catch (error) {
+      logger.warn('Failed to load long-term memory', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -283,16 +319,24 @@ Always be helpful and provide clear, concise responses.`;
 
   /**
    * 添加长期记忆
+   * @param content 记忆内容
+   * @param importance 重要性 (0-1)，默认 1.0
+   * @param tags 标签
+   * @param useUserId 是否使用用户ID（用于跨会话记忆），默认 true
    */
-  addMemory(content: string, importance: number = 1.0, tags?: string[]): string {
-    return this.memory.addMemory(content, this.sessionId, importance, tags);
+  addMemory(content: string, importance: number = 1.0, tags?: string[], useUserId: boolean = true): string {
+    // 使用 userId 使记忆跨会话共享
+    const userId = useUserId ? this.userId : undefined;
+    // 如果不使用 userId，则绑定到当前会话
+    const sessionId = useUserId ? undefined : this.sessionId;
+    return this.memory.addMemory(content, sessionId, importance, tags, userId);
   }
 
   /**
    * 搜索记忆
    */
   searchMemories(query: string, limit: number = 10) {
-    return this.memory.searchMemories(query, this.sessionId, limit);
+    return this.memory.searchMemories(query, this.userId, limit);
   }
 
   /**
