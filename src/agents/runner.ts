@@ -59,7 +59,8 @@ export class AgentRunner {
 
     // 初始化记忆存储
     const memoryConfig = this.config.getMemoryConfig();
-    this.memory = new MemoryStore(memoryConfig.path);
+    const expiryConfig = this.config.getMemoryExpiryConfig();
+    this.memory = new MemoryStore(memoryConfig.path, expiryConfig);
 
     // 初始化工具注册表
     this.toolRegistry = options.toolRegistry || new ToolRegistry();

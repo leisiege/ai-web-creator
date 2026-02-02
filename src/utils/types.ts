@@ -52,6 +52,13 @@ export interface AgentConfig {
     path: string;
     maxHistory: number;
     maxContextTokens: number;
+    expiry?: {
+      enabled: boolean;
+      maxMemoriesPerUser: number;
+      maxAgeDays: number;
+      minImportance: number;
+      cleanupOnStartup: boolean;
+    };
   };
   retry: {
     maxAttempts: number;

@@ -16,7 +16,14 @@
     "type": "sqlite",
     "path": "./data/agent.db",
     "maxHistory": 1000,
-    "maxContextTokens": 8000
+    "maxContextTokens": 8000,
+    "expiry": {
+      "enabled": true,
+      "maxMemoriesPerUser": 100,
+      "maxAgeDays": 90,
+      "minImportance": 0.3,
+      "cleanupOnStartup": true
+    }
   },
   "retry": {
     "maxAttempts": 3,

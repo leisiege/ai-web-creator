@@ -92,6 +92,13 @@ export class ConfigManager {
   }
 
   /**
+   * 获取记忆过期配置
+   */
+  getMemoryExpiryConfig() {
+    return this.config.memory.expiry;
+  }
+
+  /**
    * 获取重试配置
    */
   getRetryConfig() {

@@ -41,11 +41,28 @@ export interface ToolCallRecord {
   timestamp: number;
 }
 
+/**
+ * 记忆过期配置
+ */
+export interface MemoryExpiryConfig {
+  /** 是否启用记忆过期 */
+  enabled: boolean;
+  /** 每个用户最多保存多少条记忆 */
+  maxMemoriesPerUser: number;
+  /** 记忆最大保存天数 */
+  maxAgeDays: number;
+  /** 最低重要性阈值，低于此值的记忆可以被清理 */
+  minImportance: number;
+  /** 是否在启动时自动清理 */
+  cleanupOnStartup: boolean;
+}
+
 export class MemoryStore {
   private db: Database.Database;
   private stmts: Map<string, Database.Statement> = new Map();
+  private expiryConfig: MemoryExpiryConfig;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, expiryConfig?: Partial<MemoryExpiryConfig>) {
     // 确保数据目录存在
     const dir = dirname(dbPath);
     if (!existsSync(dir)) {
@@ -53,12 +70,26 @@ export class MemoryStore {
       logger.info(`Created data directory: ${dir}`);
     }
 
+    // 初始化记忆过期配置
+    this.expiryConfig = {
+      enabled: expiryConfig?.enabled ?? true,
+      maxMemoriesPerUser: expiryConfig?.maxMemoriesPerUser ?? 100,
+      maxAgeDays: expiryConfig?.maxAgeDays ?? 90,
+      minImportance: expiryConfig?.minImportance ?? 0.3,
+      cleanupOnStartup: expiryConfig?.cleanupOnStartup ?? true,
+    };
+
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
 
     this.initializeSchema();
     this.prepareStatements();
+
+    // 启动时清理过期记忆
+    if (this.expiryConfig.enabled && this.expiryConfig.cleanupOnStartup) {
+      this.cleanupExpiredMemories();
+    }
 
     logger.info(`Memory store initialized: ${dbPath}`);
   }
@@ -422,6 +453,85 @@ export class MemoryStore {
   close(): void {
     this.db.close();
     logger.info('Memory store closed');
+  }
+
+  /**
+   * 清理过期记忆
+   * 参考 clawdbot 的记忆管理策略
+   */
+  cleanupExpiredMemories(options?: { userId?: string; silent?: boolean }): void {
+    if (!this.expiryConfig.enabled) {
+      logger.debug('[Memory Expiry] Disabled, skipping cleanup');
+      return;
+    }
+
+    const startTime = Date.now();
+    let totalDeleted = 0;
+
+    try {
+      // 计算过期时间戳
+      const maxAgeTimestamp = Math.floor(Date.now() / 1000) - (this.expiryConfig.maxAgeDays * 86400);
+
+      // 获取所有需要清理的用户
+      const usersQuery = this.db.prepare(`
+        SELECT DISTINCT user_id FROM memories WHERE user_id IS NOT NULL
+      `);
+      const users = usersQuery.all() as Array<{ user_id: string }>;
+
+      for (const { user_id } of users) {
+        // 如果指定了 userId，只处理该用户
+        if (options?.userId && user_id !== options.userId) continue;
+
+        // 1. 删除过期的记忆（超过 maxAgeDays 天）
+        const oldMemoriesStmt = this.db.prepare(`
+          DELETE FROM memories
+          WHERE user_id = ?
+            AND created_at < ?
+            AND importance < ?
+        `);
+        const oldDeleted = oldMemoriesStmt.run(user_id, maxAgeTimestamp, this.expiryConfig.minImportance);
+        totalDeleted += oldDeleted.changes;
+
+        // 2. 检查每个用户的记忆数量，如果超过限制，删除最不重要且最久未访问的
+        const countStmt = this.db.prepare(`
+          SELECT COUNT(*) as count FROM memories WHERE user_id = ?
+        `);
+        const { count } = countStmt.get(user_id) as { count: number };
+
+        if (count > this.expiryConfig.maxMemoriesPerUser) {
+          const excess = count - this.expiryConfig.maxMemoriesPerUser;
+
+          // 按 (重要性 DESC, 访问时间 DESC) 排序，删除最不重要且最久未访问的
+          const excessStmt = this.db.prepare(`
+            DELETE FROM memories
+            WHERE rowid IN (
+              SELECT rowid FROM memories
+              WHERE user_id = ?
+              ORDER BY importance ASC, accessed_at ASC
+              LIMIT ?
+            )
+          `);
+          const excessDeleted = excessStmt.run(user_id, excess);
+          totalDeleted += excessDeleted.changes;
+        }
+      }
+
+      const duration = Date.now() - startTime;
+      if (!options?.silent && totalDeleted > 0) {
+        logger.info(`[Memory Expiry] Cleaned ${totalDeleted} expired memories in ${duration}ms`);
+      } else if (!options?.silent) {
+        logger.debug(`[Memory Expiry] No expired memories to clean (${duration}ms)`);
+      }
+    } catch (error) {
+      logger.warn('[Memory Expiry] Cleanup failed', { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /**
+   * 获取记忆过期配置
+   */
+  getExpiryConfig(): MemoryExpiryConfig {
+    return { ...this.expiryConfig };
   }
 
   // 检查点：创建快照
