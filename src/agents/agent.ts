@@ -92,32 +92,6 @@ Always be helpful and provide clear, concise responses.`;
   }
 
   /**
-   * 加载长期记忆到上下文
-   */
-  private loadLongTermMemory(): void {
-    try {
-      // 获取该用户的重要记忆
-      const memories = this.memory.getMemoriesByUser(this.userId, 20);
-
-      if (memories.length > 0) {
-        // 按重要性排序，取前5条最重要或最近访问的记忆
-        const importantMemories = memories
-          .sort((a, b) => b.importance - a.importance)
-          .slice(0, 5);
-
-        const memoryContext = importantMemories.map(m => m.content).join('\n- ');
-
-        // 添加到系统提示中
-        this.systemPrompt += `\n\nUser Context (from previous interactions):\n- ${memoryContext}`;
-
-        logger.debug(`Loaded ${importantMemories.length} memories for user ${this.userId}`);
-      }
-    } catch (error) {
-      logger.warn('Failed to load long-term memory', { error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
-  /**
    * 处理用户消息并生成响应
    */
   async process(userMessage: string): Promise<AgentResponse> {
@@ -403,7 +377,41 @@ Always be helpful and provide clear, concise responses.`;
    */
   clearHistory(): void {
     this.memory.clearMessages(this.sessionId);
+
+    // 清除历史后，重新加载长期记忆
+    this.loadLongTermMemory();
+
     logger.info(`Cleared history for session: ${this.sessionId}`);
+  }
+
+  /**
+   * 加载长期记忆到上下文
+   */
+  private loadLongTermMemory(): void {
+    try {
+      // 获取该用户的重要记忆
+      const memories = this.memory.getMemoriesByUser(this.userId, 20);
+
+      if (memories.length > 0) {
+        // 按重要性排序，取前5条最重要或最近访问的记忆
+        const importantMemories = memories
+          .sort((a, b) => b.importance - a.importance)
+          .slice(0, 5);
+
+        const memoryContext = importantMemories.map(m => m.content).join('\n- ');
+
+        // 重新设置系统提示（包含已保存的记忆）
+        this.systemPrompt = this.getDefaultSystemPrompt();
+        this.systemPrompt += `\n\nUser Context (from previous interactions):\n- ${memoryContext}`;
+
+        logger.debug(`Loaded ${importantMemories.length} memories for user ${this.userId}`);
+      } else {
+        // 如果没有长期记忆，确保系统提示是最新的
+        this.systemPrompt = this.getDefaultSystemPrompt();
+      }
+    } catch (error) {
+      logger.warn('Failed to load long-term memory', { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   /**
