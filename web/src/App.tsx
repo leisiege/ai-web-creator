@@ -1,7 +1,7 @@
 /**
  * App Component - Main Chat Interface
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useChat } from './hooks/useChat.js';
 import { ChatMessage } from './components/ChatMessage.js';
 import { ChatInput } from './components/ChatInput.js';
@@ -17,8 +17,10 @@ function App() {
     return userId;
   };
 
-  const { messages, loading, error, sendMessage, clearHistory, sessionId } = useChat(getUserId());
+  const userId = getUserId();
+  const { messages, loading, error, sendMessage, clearHistory, sessionId } = useChat(userId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -31,19 +33,33 @@ function App() {
         {/* Header */}
         <div className="bg-white rounded-t-lg shadow-lg p-6 border-b">
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <h1 className="text-2xl font-bold text-gray-800">AI Web Creator</h1>
               <p className="text-sm text-gray-500 mt-1">
                 {sessionId ? `会话 ID: ${sessionId.slice(0, 8)}...` : '开始新的对话'}
               </p>
+              {showDebug && (
+                <div className="mt-2 p-2 bg-gray-100 rounded text-xs text-gray-600">
+                  <div>用户 ID: {userId.slice(0, 20)}...</div>
+                  <div>消息数: {messages.length}</div>
+                </div>
+              )}
             </div>
-            <button
-              onClick={clearHistory}
-              disabled={!sessionId}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              清空历史
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className="px-3 py-2 text-gray-400 hover:text-gray-600 text-sm"
+              >
+                调试
+              </button>
+              <button
+                onClick={clearHistory}
+                disabled={!sessionId}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                清空历史
+              </button>
+            </div>
           </div>
         </div>
 

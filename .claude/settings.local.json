@@ -5,12 +5,11 @@
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run start:simple:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
       "Bash(node:*)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)",
-      "Bash(git remote set-url:*)"
+      "Bash(git remote set-url:*)",
+      "Bash(npm run build:*)",
+      "Bash(powershell:*)"
     ]
   }
 }
