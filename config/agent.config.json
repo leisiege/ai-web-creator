@@ -1,0 +1,44 @@
+{
+  "agent": {
+    "name": "ai-web-creator-agent",
+    "version": "0.1.0",
+    "description": "Simple agent for web automation tasks"
+  },
+  "llm": {
+    "provider": "glm",
+    "apiKey": "6e8d6a47e5204b998df00ea03dd34751.iLeLwjBVg3TOdxCG",
+    "apiBase": "https://open.bigmodel.cn/api/paas/v4",
+    "model": "glm-4-flash",
+    "maxTokens": 4096,
+    "temperature": 0.7
+  },
+  "memory": {
+    "type": "sqlite",
+    "path": "./data/agent.db",
+    "maxHistory": 1000,
+    "maxContextTokens": 8000
+  },
+  "retry": {
+    "maxAttempts": 3,
+    "initialDelay": 1000,
+    "maxDelay": 10000,
+    "backoffMultiplier": 2,
+    "jitter": true
+  },
+  "tools": {
+    "http_request": {
+      "enabled": true,
+      "timeout": 30000,
+      "maxResponseSize": 10485760
+    },
+    "web_scraper": {
+      "enabled": true,
+      "timeout": 30000,
+      "maxContentLength": 500000
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json"
+  }
+}
