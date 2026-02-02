@@ -265,8 +265,17 @@ Always be helpful and provide clear, concise responses.`;
       }
     }).join('\n');
 
+    // 确保 content 不为 undefined，并添加友好的前缀
+    const baseContent = response.content || '';
+
+    // 如果只有工具调用没有文本内容，添加说明
+    let finalContent = baseContent + toolSummary;
+    if (!baseContent && results.length > 0) {
+      finalContent = 'I\'ve used the available tools to help with your request:' + toolSummary;
+    }
+
     return {
-      content: response.content + toolSummary,
+      content: finalContent,
       toolCalls: response.toolCalls,
       usage: response.usage
     };
