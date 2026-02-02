@@ -180,8 +180,7 @@ export class LLMClient {
       throw new Error('Invalid GLM API key format');
     }
 
-    // 简单实现：直接使用 API key
-    // 生产环境应该生成 JWT token
+    // GLM-4 API uses direct Bearer token with API key
     return apiKey;
   }
 

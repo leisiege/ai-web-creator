@@ -47,5 +47,12 @@
   "logging": {
     "level": "info",
     "format": "json"
+  },
+  "web": {
+    "enabled": true,
+    "port": 3000,
+    "cors": {
+      "origin": ["http://localhost:5173"]
+    }
   }
 }

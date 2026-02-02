@@ -9,19 +9,31 @@
     "dev": "tsc --watch",
     "start": "node dist/main.js",
     "start:simple": "node dist/simple-cli.js",
+    "web": "node dist/web/server.js",
+    "dev:web": "tsx watch src/web/server.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint src --ext .ts"
   },
-  "keywords": ["agent", "ai", "llm", "automation"],
+  "keywords": [
+    "agent",
+    "ai",
+    "llm",
+    "automation"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^11.0.0",
-    "cheerio": "^1.0.0"
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0"
   }
 }
