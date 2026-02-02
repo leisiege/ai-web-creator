@@ -158,6 +158,11 @@ Always be helpful and provide clear, concise responses.`;
         this.memory.addMessage(assistantMsg, this.sessionId);
       }
 
+      // 6. 自动提取和保存长期记忆（异步，不阻塞响应）
+      this.extractAndSaveMemory(userMessage, finalResponse.content).catch(err => {
+        logger.warn('Failed to save memory', { error: err instanceof Error ? err.message : String(err) });
+      });
+
       const duration = Date.now() - startTime;
       logger.info(`Message processed in ${duration}ms`);
 
@@ -165,6 +170,53 @@ Always be helpful and provide clear, concise responses.`;
     } catch (error) {
       logger.error('Error processing message', error as Error);
       throw error;
+    }
+  }
+
+  /**
+   * 自动提取和保存长期记忆
+   */
+  private async extractAndSaveMemory(userMessage: string, assistantResponse: string): Promise<void> {
+    // 跳过简单的问候和工具调用响应
+    const skipPatterns = [
+      /^(你好|hi|hello|嗨|您好)/i,
+      /^i've used the available tools/i,
+      /^tool \w+ result:/i,
+      /^(ok|好的|明白了|收到)/i
+    ];
+
+    for (const pattern of skipPatterns) {
+      if (pattern.test(userMessage) || pattern.test(assistantResponse)) {
+        return;
+      }
+    }
+
+    // 构建提示词来提取重要信息
+    const extractPrompt = `从以下对话中提取需要记住的用户信息（如姓名、职业、偏好、位置等）。
+如果对话中没有需要长期记住的信息，返回 "NONE"。
+
+对话：
+用户: ${userMessage}
+助手: ${assistantResponse}
+
+只返回需要记住的信息，用简洁的语言描述。如果没有，返回 "NONE"。`;
+
+    try {
+      const llmResponse = await this.llmClient.chat([
+        { role: 'system', content: '你是一个助手，专门提取对话中的重要用户信息。' },
+        { role: 'user', content: extractPrompt }
+      ]);
+
+      const extracted = llmResponse.content?.trim();
+
+      // 如果提取到了重要信息且不是 "NONE"
+      if (extracted && extracted !== 'NONE' && extracted.length > 10 && extracted.length < 200) {
+        this.addMemory(extracted, 1.5, ['auto-extracted']);
+        logger.info(`Auto-saved memory: ${extracted.substring(0, 50)}...`);
+      }
+    } catch (error) {
+      // 记忆提取失败不影响主流程
+      logger.debug('Memory extraction skipped', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
